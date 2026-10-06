@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAT · Repository Analysis Tool</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230ea5e9'/><text x='16' y='22' font-size='17' font-family='monospace' font-weight='bold' text-anchor='middle' fill='white'>R</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">◧</span>
+    <span class="brand-name">RAT</span>
+    <span class="brand-sub">Repository Analysis Tool</span>
+  </div>
+
+  <div class="topbar-group">
+    <label class="topbar-label" for="repoSelect">Repository</label>
+    <select id="repoSelect" class="select select-repo"></select>
+    <button id="addRepoBtn" class="btn btn-primary btn-sm" title="Add a repository (zip upload or clone URL)">+&nbsp;Add</button>
+  </div>
+
+  <div class="topbar-group" id="refGroup" hidden>
+    <label class="topbar-label" for="refSelect">Reference</label>
+    <select id="refSelect" class="select" title="Analysis is limited to non-merge commits reachable from this reference"></select>
+  </div>
+
+  <div class="spacer"></div>
+
+  <div id="repoStatusChip" class="status-chip" hidden></div>
+
+  <nav class="tabs">
+    <button class="tab active" data-view="dashboard">Dashboard</button>
+    <button class="tab" data-view="overview">Repositories</button>
+    <button class="tab tab-icon" id="helpBtn" title="Metric reference">?</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ===================== Dashboard ===================== -->
+  <section id="dashboardView" class="layout">
+    <aside class="sidebar">
+      <div class="side-section">
+        <h3>Commit selection <button id="resetFiltersBtn" class="link-btn" title="Reset every filter">Reset</button></h3>
+        <div class="segmented" id="commitModeSeg">
+          <button data-mode="all" class="active">All</button>
+          <button data-mode="range">Time range</button>
+          <button data-mode="list">Manual</button>
+        </div>
+        <div id="rangePane" hidden>
+          <label class="field">From
+            <input type="datetime-local" id="fromInput" class="input">
+          </label>
+          <label class="field">To (exclusive)
+            <input type="datetime-local" id="toInput" class="input">
+          </label>
+          <div class="presets">
+            <button data-preset="90d">90 days</button>
+            <button data-preset="1y">1 year</button>
+            <button data-preset="3y">3 years</button>
+            <button data-preset="clear">Clear</button>
+          </div>
+        </div>
+        <div id="listPane" hidden>
+          <button id="pickCommitsBtn" class="btn btn-ghost">Select commits…</button>
+          <div id="selectedCommitsInfo" class="hint">No commits selected</div>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <h3>Authors <button id="mergeAuthorsBtn" class="link-btn" title="Manually merge author identities">Merge…</button></h3>
+        <input id="authorSearch" class="input input-sm" placeholder="Search authors…">
+        <div id="authorList" class="multi-list"></div>
+        <div class="hint" id="authorHint"></div>
+      </div>
+
+      <div class="side-section">
+        <h3>File / directory</h3>
+        <input id="pathSearch" class="input input-sm" placeholder="Search files and folders…">
+        <div id="pathResults" class="multi-list"></div>
+        <div id="pathChip" class="chip chip-scope" hidden></div>
+      </div>
+    </aside>
+
+    <div class="content">
+      <div class="scope-bar">
+        <div class="scope-info">
+          <div class="scope-title" id="scopeTitle">Repository</div>
+          <div class="scope-meta" id="scopeMeta"></div>
+        </div>
+        <div class="spacer"></div>
+        <button id="scopeUpBtn" class="btn btn-ghost btn-sm" hidden title="Clear the file / directory scope">←&nbsp;Whole repository</button>
+        <span class="pill" id="elapsedBadge" hidden></span>
+        <span class="spinner" id="loadingIndicator" hidden></span>
+      </div>
+
+      <div id="emptyState" class="empty-state" hidden>
+        <div class="empty-icon">◧</div>
+        <h2>No repository selected</h2>
+        <p>Add a repository from a <strong>zip archive</strong> (containing its <code>.git</code> directory) or
+           clone one from a <strong>remote URL</strong>.</p>
+        <button class="btn btn-primary" id="emptyAddBtn">Add your first repository</button>
+      </div>
+
+      <div id="dashboardBody" hidden>
+        <div id="selectionWarn" class="banner warn" hidden></div>
+
+        <div class="cards" id="cards"></div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head">
+              <h3>Activity over time</h3>
+              <div class="spacer"></div>
+              <div class="legend">
+                <span class="lg lg-added">Added</span>
+                <span class="lg lg-removed">Removed</span>
+                <span class="lg lg-growth">Cumulative growth</span>
+              </div>
+            </div>
+            <div id="activityChart" class="chart chart-activity"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3 id="topObjectsTitle">Top objects by churn</h3></div>
+            <div id="topObjectsChart" class="chart chart-bars"></div>
+          </div>
+        </div>
+
+        <div class="panel" id="drillPanel" hidden>
+          <div class="panel-head">
+            <h3>Author ownership — <span id="drillScopeName" class="accent"></span></h3>
+            <div class="spacer"></div>
+            <span class="hint">fraction of churn contributed by each author on the selected object</span>
+          </div>
+          <div class="drill-body">
+            <div id="ownershipDonut" class="chart chart-donut"></div>
+            <div class="drill-table" id="drillAuthorsTable"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="table-tabs" id="tableTabs">
+              <button class="tab-sm active" data-table="files">Files</button>
+              <button class="tab-sm" data-table="dirs">Directories</button>
+              <button class="tab-sm" data-table="authors">Authors</button>
+            </div>
+            <div class="spacer"></div>
+            <input id="tableSearch" class="input input-sm" placeholder="Filter rows…">
+            <button id="exportCsvBtn" class="btn btn-ghost btn-sm" title="Export the currently visible table">Export CSV</button>
+          </div>
+          <div class="table-meta" id="tableMeta"></div>
+          <div class="table-wrap" id="tableWrap"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Repositories overview ===================== -->
+  <section id="overviewView" hidden>
+    <div class="overview-head">
+      <div>
+        <h2>Repositories</h2>
+        <p class="hint">Multiple repositories can be loaded at once. Each is analysed independently; switch between them from the top bar.</p>
+      </div>
+      <button id="addRepoBtn2" class="btn btn-primary">+ Add repository</button>
+    </div>
+    <div id="repoCards" class="repo-cards"></div>
+  </section>
+</main>
+
+<div id="toasts" class="toasts"></div>
+<div class="modal-backdrop" id="modalRoot" hidden>
+  <div class="modal" id="modalBox" role="dialog" aria-modal="true"></div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

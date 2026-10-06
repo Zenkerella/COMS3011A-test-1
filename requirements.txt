@@ -1,0 +1,6 @@
+# Runtime dependencies
+flask==3.0.3
+numpy==1.26.4
+
+# Development / test dependencies
+pytest==7.4.4
